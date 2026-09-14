@@ -1,0 +1,85 @@
+body {
+  font-family: Arial, sans-serif;
+  background-color: #f7f8fa;
+  margin: 0;
+  padding: 0;
+  color: #1f2937;
+}
+
+.container {
+  max-width: 800px;
+  margin: 50px auto;
+  padding: 20px;
+}
+
+h1 {
+  margin-bottom: 5px;
+  text-align: center;
+}
+
+.subtitle {
+  text-align: center;
+  color: #6b7280;
+  margin-bottom: 30px;
+}
+
+.chat-box {
+  background-color: white;
+  padding: 24px;
+  border-radius: 12px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+}
+
+label {
+  display: block;
+  font-weight: bold;
+  margin-bottom: 10px;
+}
+
+textarea {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 16px;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+button {
+  margin-top: 15px;
+  background-color: #2563eb;
+  color: white;
+  border: none;
+  padding: 12px 18px;
+  font-size: 16px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+button:hover {
+  background-color: #1d4ed8;
+}
+
+.status {
+  margin-top: 15px;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.response-section {
+  margin-top: 30px;
+}
+
+.response-section h2 {
+  margin-bottom: 10px;
+}
+
+.response {
+  background-color: #f3f4f6;
+  padding: 16px;
+  border-radius: 8px;
+  min-height: 80px;
+  white-space: pre-wrap;
+  line-height: 1.5;
+}

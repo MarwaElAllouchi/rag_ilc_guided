@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chatbot ILC</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="container">
+    <h1>Institut Langues et Cultures</h1>
+    <p class="subtitle">Assistant virtuel de l’Institut ILC</p>
+
+    <div class="chat-box">
+      <label for="question">Posez votre question</label>
+
+      <textarea
+        id="question"
+        placeholder="Exemple : Comment s'inscrire à l'école ?"
+        rows="4"
+      ></textarea>
+
+      <button id="send-btn">Envoyer</button>
+
+      <div id="status" class="status"></div>
+
+      <div class="response-section">
+        <h2>Réponse</h2>
+
+        <div id="response" class="response">
+          La réponse du chatbot s’affichera ici.
+        </div>
+
+        <div id="suggestions" class="suggestions"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

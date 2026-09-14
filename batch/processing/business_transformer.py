@@ -131,9 +131,11 @@ class BusinessTransformer:
         """
         Transforme un tableau de formules/tarifs en objets métier.
 
-        Champs métier attendus :
+        Champs métier :
+        - categorie
         - formule
         - duree
+        - prise_en_charge_pause_dejeuner
         - tarif
         """
         resolved_columns = cls._resolve_required_columns(
@@ -148,8 +150,13 @@ class BusinessTransformer:
         for _, row in df.iterrows():
             row_data = cls._clean_row(row, list(df.columns))
 
+            categorie = row_data.get("categorie", "")
             formule = row_data.get(resolved_columns["formule"], "")
             duree = row_data.get(resolved_columns["duree"], "")
+            prise_en_charge_pause_dejeuner = row_data.get(
+                "prise_en_charge_pause_dejeuner",
+                "",
+            )
             tarif = row_data.get(resolved_columns["tarif"], "")
 
             # règle minimale : une formule doit exister
@@ -159,19 +166,31 @@ class BusinessTransformer:
 
             results.append(
                 {
+                    "categorie": categorie,
                     "formule": formule,
                     "duree": duree,
+                    "prise_en_charge_pause_dejeuner": prise_en_charge_pause_dejeuner,
                     "tarif": tarif,
                 }
             )
 
-        results = cls._deduplicate_records(results, unique_keys=["formule", "duree", "tarif"])
+        results = cls._deduplicate_records(
+            results,
+            unique_keys=[
+                "categorie",
+                "formule",
+                "duree",
+                "prise_en_charge_pause_dejeuner",
+                "tarif",
+            ],
+        )
 
         logger.info(
             "BusinessTransformer.formules_tarifs : %s enregistrements générés, %s lignes ignorées",
             len(results),
             skipped_rows,
         )
+
         return results
 
     @classmethod

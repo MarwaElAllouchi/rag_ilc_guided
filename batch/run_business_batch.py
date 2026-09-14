@@ -84,11 +84,11 @@ class BusinessBatchRunner:
     def build_cycles_niveaux(self) -> dict[str, Any]:
         """
         Génère cycles_niveaux.json à partir de :
-        - niveaux.xlsx
-        - niveaux.docx
+        -niveaux_arabe.xlsx
+        - niveaux_arabe.docx
         """
-        niveaux_sheet_path = self.raw_sheets_dir / "niveaux.xlsx"
-        niveaux_doc_path = self.raw_docs_dir / "niveaux.docx"
+        niveaux_sheet_path = self.raw_sheets_dir / "niveaux_arabe.xlsx"
+        niveaux_doc_path = self.raw_docs_dir / "niveaux_arabe.docx"
         output_path = self.business_dir / "cycles_niveaux.json"
 
         df = self._load_sheet(niveaux_sheet_path)

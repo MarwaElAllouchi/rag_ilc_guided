@@ -119,6 +119,19 @@ class FaqTransformer:
             return "reglement"
 
         return "general"
+    
+    @staticmethod
+    def _detect_program(question: str, answer: str = "") -> str:
+        text = f"{question} {answer}".lower()
+
+        if "arabe" in text or "arabic" in text:
+            return "arabe"
+
+        if "anglais" in text or "english" in text:
+            return "anglais"
+
+        return "general"
+
 
     @staticmethod
     def _normalize_target(value: str) -> str:
@@ -168,6 +181,7 @@ class FaqTransformer:
         question: str,
         answer: str,
         category: str,
+        program: str,
         keywords: str,
         source_file: str,
         language: str,
@@ -178,6 +192,7 @@ class FaqTransformer:
                 "faq_id": faq_id,
                 "source_type": "faq",
                 "category": category,
+                "program": program,
                 "keywords": keywords,
                 "source_file": source_file,
                 "language": language,
@@ -262,6 +277,8 @@ class FaqTransformer:
             if not category:
                 category = cls._classify_category(question, answer)
 
+            program = cls._detect_program(question, answer)
+
             explicit_target = cls._normalize_target(explicit_target)
 
             if explicit_target == "reject":
@@ -295,6 +312,7 @@ class FaqTransformer:
                         question=question,
                         answer=answer,
                         category=category,
+                        program=program,
                         keywords=keywords,
                         source_file=source_file,
                         language=language,

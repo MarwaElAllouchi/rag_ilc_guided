@@ -1,75 +1,32 @@
 from __future__ import annotations
 
-from typing import Any, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
 
+class ChatSuggestion(BaseModel):
+    label: str
+    value: str
+
+
+class ChatSession(BaseModel):
+    child_age: int | None = None
+    child_birth_year: int | None = None
+    program: str | None = None
+
+
 class ChatRequest(BaseModel):
-    """
-    Requête envoyée à l'endpoint /chat.
-    """
-
-    question: str = Field(
-        ...,
-        min_length=1,
-        description="Question de l'utilisateur",
-        example="Quels sont les tarifs ?",
-    )
-
-    top_k: int = Field(
-        default=5,
-        ge=1,
-        le=20,
-        description="Nombre de documents à récupérer",
-        example=5,
-    )
-
-
-class DocumentMetadata(BaseModel):
-    """
-    Métadonnées d'un document retourné (optionnel).
-    """
-
-    source_file: Optional[str] = None
-    category: Optional[str] = None
-    source_type: Optional[str] = None
-
-
-class DocumentResult(BaseModel):
-    """
-    Document retourné par le retriever (optionnel).
-    """
-
-    content: str
-    metadata: DocumentMetadata
-    distance: Optional[float] = None
+    question: str | None = None
+    choice: str | None = None
+    context: str | None = None
+    session: ChatSession | None = None
+    top_k: int = Field(default=5, ge=1, le=10)
 
 
 class ChatResponse(BaseModel):
-    """
-    Réponse renvoyée par l'endpoint /chat.
-    """
-
-    answer: str = Field(
-        ...,
-        description="Réponse générée par le système RAG",
-    )
-
-    intent: Optional[str] = Field(
-        default=None,
-        description="Intention détectée (tarif, niveau, inscription, general)",
-    )
-
-    route: Optional[str] = Field(
-        default=None,
-        description="Route utilisée (business, rag, small_talk...)",
-    )
-
-    documents: Optional[List[DocumentResult]] = Field(
-        default=None,
-        description="Documents utilisés pour générer la réponse (debug / transparence)",
-    )
-
-    class Config:
-        extra = "ignore"
+    answer: str
+    intent: str | None = None
+    route: str | None = None
+    documents: list[dict[str, Any]] = Field(default_factory=list)
+    suggestions: list[ChatSuggestion] = Field(default_factory=list)

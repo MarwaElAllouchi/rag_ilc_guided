@@ -20,12 +20,18 @@ logger = logging.getLogger(__name__)
 
 class RagPipeline:
     """
-    VERSION PROD STABLE :
-    - retrieval simple
-    - anti-hallucination (seuil)
-    - fallback sécurisé
-    - FAQ shortcut
-    - routing par intention métier
+    Pipeline RAG de l'Institut ILC.
+
+    Responsabilités :
+    - rechercher uniquement dans les documents autorisés par le router
+    - appliquer les filtres category / program / source_file
+    - vérifier la pertinence des documents
+    - utiliser directement une FAQ lorsqu'elle correspond clairement
+    - générer une réponse à partir des documents trouvés
+    - retourner un fallback sécurisé si l'information n'est pas disponible
+
+    Le pipeline ne décide pas du parcours du chatbot.
+    Cette responsabilité appartient à router.py.
     """
 
     def __init__(self) -> None:
@@ -33,10 +39,18 @@ class RagPipeline:
         self.retriever = Retriever()
         self.generator = ResponseGenerator()
 
+    # =========================================================
+    # UTILITAIRES
+    # =========================================================
+
     @staticmethod
-    def _clean_question(user_question: str) -> str:
+    def _clean_question(
+        user_question: str,
+    ) -> str:
+
         if not isinstance(user_question, str):
             return ""
+
         return user_question.strip()
 
     @staticmethod
@@ -45,6 +59,7 @@ class RagPipeline:
         documents: list[dict[str, Any]] | None = None,
         intent: str = "general",
     ) -> dict[str, Any]:
+
         return {
             "answer": answer,
             "documents": documents or [],
@@ -52,216 +67,456 @@ class RagPipeline:
         }
 
     @staticmethod
-    def _build_no_document_answer(intent: str) -> str:
+    def _build_no_document_answer(
+        intent: str,
+    ) -> str:
+
         return "Je n’ai pas cette information pour le moment."
 
+    # =========================================================
+    # FAQ
+    # =========================================================
+
     @staticmethod
-    def _extract_faq_answer_from_content(content: str) -> str | None:
+    def _extract_faq_answer_from_content(
+        content: str,
+    ) -> str | None:
+
         if not isinstance(content, str):
             return None
 
         marker = "Réponse :"
+
         if marker not in content:
             return None
 
-        return content.split(marker, 1)[1].strip() or None
+        answer = content.split(
+            marker,
+            1,
+        )[1].strip()
+
+        return answer or None
+
+    # =========================================================
+    # DISTANCE / PERTINENCE
+    # =========================================================
 
     @staticmethod
-    def _get_document_distance(document: dict[str, Any]) -> float:
+    def _get_document_distance(
+        document: dict[str, Any],
+    ) -> float:
         """
         Retourne la meilleure distance disponible :
-        - adjusted_distance si elle existe
-        - sinon distance brute
-        - sinon 999.0
+
+        - adjusted_distance
+        - distance
+        - 999.0 si aucune distance
         """
-        adjusted_distance = document.get("adjusted_distance")
+
+        adjusted_distance = document.get(
+            "adjusted_distance"
+        )
+
         if adjusted_distance is not None:
             return float(adjusted_distance)
 
-        distance = document.get("distance")
+        distance = document.get(
+            "distance"
+        )
+
         if distance is not None:
             return float(distance)
 
         return 999.0
 
+    # =========================================================
+    # FAQ SHORTCUT
+    # =========================================================
+
     @staticmethod
-    def _should_short_circuit_with_faq(documents: list[dict[str, Any]]) -> bool:
+    def _should_short_circuit_with_faq(
+        documents: list[dict[str, Any]],
+    ) -> bool:
+        """
+        Utilise directement la réponse FAQ uniquement lorsqu'elle
+        est clairement plus pertinente que les autres documents.
+        """
+
         if not documents:
             return False
 
         top1 = documents[0]
-        metadata = top1.get("metadata", {}) or {}
 
-        if str(metadata.get("source_type", "")).lower() != "faq":
+        metadata = (
+            top1.get("metadata", {})
+            or {}
+        )
+
+        source_type = str(
+            metadata.get(
+                "source_type",
+                "",
+            )
+        ).lower()
+
+        if source_type != "faq":
             return False
 
-        top1_dist = RagPipeline._get_document_distance(top1)
+        top1_distance = (
+            RagPipeline._get_document_distance(
+                top1
+            )
+        )
 
-        if top1_dist > 0.20:
+        # FAQ pas assez proche.
+        if top1_distance > 0.20:
             return False
 
+        # Une seule FAQ très pertinente.
         if len(documents) == 1:
             return True
 
-        top2_dist = RagPipeline._get_document_distance(documents[1])
+        top2_distance = (
+            RagPipeline._get_document_distance(
+                documents[1]
+            )
+        )
 
-        return (top2_dist - top1_dist) >= 0.08
+        # La première FAQ doit être nettement meilleure.
+        return (
+            top2_distance - top1_distance
+        ) >= 0.08
+
+    # =========================================================
+    # PIPELINE PRINCIPAL
+    # =========================================================
 
     def run(
         self,
         user_question: str,
         top_k: int | None = None,
         intent: str | None = None,
+        source_files: list[str] | None = None,
+        programs: list[str] | None = None,
+        categories: list[str] | None = None,
     ) -> dict[str, Any]:
 
         pipeline_start_time = time.time()
 
-        cleaned_question = self._clean_question(user_question)
+        cleaned_question = self._clean_question(
+            user_question
+        )
+
+        # -----------------------------------------------------
+        # Question vide
+        # -----------------------------------------------------
 
         if not cleaned_question:
             return self._build_response(
-                answer="Pouvez-vous préciser votre question, s’il vous plaît ?",
+                answer=(
+                    "Pouvez-vous préciser votre question, "
+                    "s’il vous plaît ?"
+                ),
                 intent="general",
             )
 
-        effective_intent = intent or QueryAnalyzer.detect_intent(cleaned_question)
+        # -----------------------------------------------------
+        # Intention
+        # -----------------------------------------------------
+
+        effective_intent = (
+            intent
+            or QueryAnalyzer.detect_intent(
+                cleaned_question
+            )
+        )
+
+        # -----------------------------------------------------
+        # Catégories par défaut
+        #
+        # Le router peut toujours fournir explicitement
+        # categories=[...].
+        # Dans ce cas elles sont prioritaires.
+        # -----------------------------------------------------
 
         categories_by_intent = {
-            "niveau": ["niveau"],
-            "inscription": ["inscription", "paiement", "reglement"],
-            "tarif": ["tarif", "paiement"],
-            "reglement": ["reglement"],
+            "niveau": [
+                "niveau",
+            ],
+
+            "inscription": [
+                "inscription",
+                "paiement",
+            ],
+
+            "tarif": [
+                "tarif",
+                "paiement",
+            ],
         }
 
-        categories = categories_by_intent.get(effective_intent)
+        effective_categories = (
+            categories
+            if categories is not None
+            else categories_by_intent.get(
+                effective_intent
+            )
+        )
 
         logger.info(
-            "Pipeline RAG | question='%s' | intent=%s | categories=%s",
+            "Pipeline RAG | question='%s' | intent=%s | "
+            "categories=%s | source_files=%s | programs=%s",
             cleaned_question,
             effective_intent,
-            categories,
+            effective_categories,
+            source_files,
+            programs,
         )
+
+        # =====================================================
+        # RETRIEVAL
+        # =====================================================
 
         retrieval_start_time = time.time()
 
         try:
+
             documents = self.retriever.retrieve(
                 query=cleaned_question,
-                top_k=top_k or self.settings.top_k,
-                categories=categories,
+                top_k=(
+                    top_k
+                    if top_k is not None
+                    else self.settings.top_k
+                ),
+                categories=effective_categories,
+                source_files=source_files,
+                programs=programs,
             )
+
         except EmbeddingServiceUnavailableError:
+
+            logger.warning(
+                "Service d'embedding indisponible."
+            )
+
             logger.info(
-                "⏱ Pipeline stopped during retrieval after %.3f sec",
+                "⏱ Pipeline arrêté pendant retrieval : %.3f sec",
                 time.time() - pipeline_start_time,
             )
+
             return self._build_response(
-                answer="Le service de recherche est indisponible.",
+                answer=(
+                    "Le service de recherche est "
+                    "momentanément indisponible."
+                ),
                 intent=effective_intent,
             )
+
         except Exception:
-            logger.exception("Erreur retrieval")
+
+            logger.exception(
+                "Erreur pendant le retrieval"
+            )
+
             logger.info(
-                "⏱ Pipeline stopped during retrieval after %.3f sec",
+                "⏱ Pipeline arrêté pendant retrieval : %.3f sec",
                 time.time() - pipeline_start_time,
             )
+
             return self._build_response(
-                answer="Une erreur technique est survenue.",
+                answer=(
+                    "Une erreur technique est survenue."
+                ),
                 intent=effective_intent,
             )
 
         logger.info(
-            "⏱ Retrieval time: %.3f sec",
+            "⏱ Retrieval : %.3f sec",
             time.time() - retrieval_start_time,
         )
 
+        # =====================================================
+        # AUCUN DOCUMENT
+        # =====================================================
+
         if not documents:
+
             logger.info(
-                "⏱ Total pipeline time: %.3f sec",
+                "Aucun document pertinent trouvé."
+            )
+
+            logger.info(
+                "⏱ Pipeline total : %.3f sec",
                 time.time() - pipeline_start_time,
             )
+
             return self._build_response(
-                answer=self._build_no_document_answer(effective_intent),
+                answer=self._build_no_document_answer(
+                    effective_intent
+                ),
                 intent=effective_intent,
             )
 
-        best_distance = self._get_document_distance(documents[0])
-        threshold = self.settings.max_retrieval_distance
+        # =====================================================
+        # CONTRÔLE DE PERTINENCE
+        # =====================================================
 
-        logger.info("Distance=%.3f | threshold=%.2f", best_distance, threshold)
+        best_distance = (
+            self._get_document_distance(
+                documents[0]
+            )
+        )
+
+        threshold = (
+            self.settings.max_retrieval_distance
+        )
+
+        logger.info(
+            "Distance=%.3f | threshold=%.3f",
+            best_distance,
+            threshold,
+        )
 
         if best_distance > threshold:
-            logger.warning("Fallback : documents non pertinents")
+
+            logger.warning(
+                "Fallback : documents non pertinents."
+            )
+
             logger.info(
-                "⏱ Total pipeline time: %.3f sec",
+                "⏱ Pipeline total : %.3f sec",
                 time.time() - pipeline_start_time,
             )
+
             return self._build_response(
-                answer="Je n’ai pas cette information pour le moment.",
+                answer=(
+                    "Je n’ai pas cette information "
+                    "pour le moment."
+                ),
                 intent=effective_intent,
             )
 
-        if self._should_short_circuit_with_faq(documents):
-            faq_answer = self._extract_faq_answer_from_content(
-                documents[0].get("content", "")
+        # =====================================================
+        # FAQ DIRECTE
+        # =====================================================
+
+        if self._should_short_circuit_with_faq(
+            documents
+        ):
+
+            faq_answer = (
+                self._extract_faq_answer_from_content(
+                    documents[0].get(
+                        "content",
+                        "",
+                    )
+                )
             )
+
             if faq_answer:
+
                 logger.info(
-                    "⏱ Total pipeline time: %.3f sec",
+                    "Réponse directe depuis la FAQ."
+                )
+
+                logger.info(
+                    "⏱ Pipeline total : %.3f sec",
                     time.time() - pipeline_start_time,
                 )
+
                 return self._build_response(
                     answer=faq_answer,
-                    documents=[documents[0]],
+                    documents=[
+                        documents[0]
+                    ],
                     intent=effective_intent,
                 )
 
-        context_docs = documents[:5]
+        # =====================================================
+        # CONTEXTE POUR LE LLM
+        # =====================================================
+
+        context_documents = documents[:5]
+
+        # =====================================================
+        # CONSTRUCTION DU PROMPT
+        # =====================================================
 
         prompt_start_time = time.time()
+
         messages = PromptBuilder.build_prompt(
             user_question=cleaned_question,
-            documents=context_docs,
+            documents=context_documents,
         )
+
         logger.info(
-            "⏱ Prompt build time: %.3f sec",
+            "⏱ Prompt : %.3f sec",
             time.time() - prompt_start_time,
         )
+
+        # =====================================================
+        # GÉNÉRATION
+        # =====================================================
 
         generation_start_time = time.time()
 
         try:
-            answer = self.generator.generate(messages)
+
+            answer = self.generator.generate(
+                messages
+            )
+
         except GenerationServiceUnavailableError:
+
+            logger.warning(
+                "Service de génération indisponible."
+            )
+
             logger.info(
-                "⏱ Generation time before failure: %.3f sec",
+                "⏱ Génération interrompue : %.3f sec",
                 time.time() - generation_start_time,
             )
+
             return self._build_response(
-                answer="Le service de réponse est indisponible.",
-                documents=context_docs,
+                answer=(
+                    "Le service de réponse est "
+                    "momentanément indisponible."
+                ),
+                documents=context_documents,
                 intent=effective_intent,
             )
+
         except Exception:
-            logger.exception("Erreur génération")
+
+            logger.exception(
+                "Erreur pendant la génération."
+            )
+
             return self._build_response(
-                answer="Une erreur est survenue lors de la réponse.",
-                documents=context_docs,
+                answer=(
+                    "Une erreur est survenue "
+                    "lors de la génération de la réponse."
+                ),
+                documents=context_documents,
                 intent=effective_intent,
             )
 
         logger.info(
-            "⏱ Generation time: %.3f sec",
+            "⏱ Génération : %.3f sec",
             time.time() - generation_start_time,
         )
 
         logger.info(
-            "⏱ Total pipeline time: %.3f sec",
+            "⏱ Pipeline total : %.3f sec",
             time.time() - pipeline_start_time,
         )
 
+        # =====================================================
+        # RÉPONSE FINALE
+        # =====================================================
+
         return self._build_response(
             answer=answer,
-            documents=context_docs,
+            documents=context_documents,
             intent=effective_intent,
         )

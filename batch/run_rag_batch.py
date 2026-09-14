@@ -66,6 +66,7 @@ class RagBatchRunner:
         }
 
     def _process_long_documents(self) -> list[dict[str, Any]]:
+        
         """
         Parcourt automatiquement le dossier des documents longs
         et transforme tous les fichiers supportés pour le RAG.
@@ -74,24 +75,45 @@ class RagBatchRunner:
         - ignore les fichiers temporaires Word (~$)
         - préfère TXT > DOCX > PDF si plusieurs fichiers ont le même nom de base
         """
+
         documents: list[dict[str, Any]] = []
 
         if not self.raw_docs_dir.exists():
-            logger.warning("Dossier documents introuvable : %s", self.raw_docs_dir)
+            logger.warning(
+                "Dossier documents introuvable : %s",
+                self.raw_docs_dir,
+            )
             return documents
 
         candidate_files = self._collect_candidate_files()
-        selected_files = self._select_best_files(candidate_files)
+
+        selected_files = self._select_best_files(
+            candidate_files
+        )
 
         for file_path in selected_files:
-            category = self.detect_category(file_path.name)
 
-            logger.info("Traitement du document long : %s", file_path.name)
+            category = self.detect_category(
+                file_path.name
+            )
+
+            program = self.detect_program(
+                file_path.name
+            )
+
+            logger.info(
+                "Traitement du document long : %s "
+                "(category=%s, program=%s)",
+                file_path.name,
+                category,
+                program,
+            )
 
             doc_chunks = DocumentTransformer.transform_document(
                 file_path=file_path,
                 source_type="document",
                 category=category,
+                program=program,
                 language="fr",
             )
 
@@ -101,9 +123,12 @@ class RagBatchRunner:
                 language="fr",
                 default_source_type="document",
                 default_category=category,
+                default_program=program,
             )
 
-            documents.extend(enriched_chunks)
+            documents.extend(
+                enriched_chunks
+            )
 
         return documents
 
@@ -170,6 +195,19 @@ class RagBatchRunner:
             return "niveau"
         if "contact" in name or "coordonne" in name or "info" in name:
             return "information"
+
+        return "general"
+    
+        
+    @staticmethod
+    def detect_program(file_name: str) -> str:
+        name = file_name.lower()
+
+        if "anglais" in name or "english" in name:
+            return "anglais"
+
+        if "arabe" in name:
+            return "arabe"
 
         return "general"
 
