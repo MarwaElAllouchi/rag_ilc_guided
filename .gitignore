@@ -7,4 +7,6 @@ data/
 data/processed/
 data/exports/
 .dockerignore
-.history/
+.history
+frontend-demo/
+tests/
