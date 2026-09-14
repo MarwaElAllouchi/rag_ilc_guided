@@ -38,7 +38,9 @@ class RagRouter:
 
     Les questions libres concernant les horaires restent prises en charge.
 
-    La saisie libre reste disponible mais ne déclenche plus de RAG général.
+    Les questions libres non reconnues par un parcours spécialisé
+    sont envoyées vers le RAG général.
+    
     """
 
     def __init__(self) -> None:
@@ -511,13 +513,22 @@ class RagRouter:
                 "free_myscol_rag",
             )
 
+        logger.info(
+            "Router → question libre non spécialisée, envoi vers le RAG général"
+        )
+
+        result = self.pipeline.run(
+            user_question=cleaned_question,
+            top_k=effective_top_k,
+            intent="general",
+            programs=["general"],
+        )
+
         return self._build_response(
-            answer=(
-                "Je peux vous aider concernant les tarifs, le niveau de votre enfant, "
-                "l’inscription, les horaires et MyScol. Choisissez un sujet ci-dessous 👇"
-            ),
-            intent="unsupported",
-            route="unsupported_free_question",
+            answer=result["answer"],
+            documents=result.get("documents", []),
+            intent="general",
+            route="free_general_rag",
             suggestions=MAIN_CHOICES,
         )
 

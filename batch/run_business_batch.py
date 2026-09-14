@@ -11,6 +11,7 @@ from app.core.logging_config import setup_logging
 from batch.ingestion.sheet_loader import SheetLoader
 from batch.processing.business_transformer import BusinessTransformer
 from batch.processing.cycle_parser import CycleParser
+from batch.processing.english_level_parser import EnglishLevelParser
 
 
 logger = logging.getLogger(__name__)
@@ -23,6 +24,7 @@ class BusinessBatchRunner:
     Sorties principales :
     - formules_tarifs.json
     - cycles_niveaux.json
+    - niveaux_anglais.json
     """
 
     def __init__(
@@ -43,26 +45,39 @@ class BusinessBatchRunner:
 
         formules_tarifs = self.build_formules_tarifs()
         cycles_niveaux = self.build_cycles_niveaux()
+        niveaux_anglais = self.build_niveaux_anglais()
 
         stats = {
             "formules_tarifs_count": len(formules_tarifs),
-            "niveaux_mapping_count": len(cycles_niveaux.get("niveaux_par_annee", [])),
-            "cycles_count": len(cycles_niveaux.get("cycles", [])),
+            "niveaux_mapping_count": len(
+                cycles_niveaux.get("niveaux_par_annee", [])
+            ),
+            "cycles_count": len(
+                cycles_niveaux.get("cycles", [])
+            ),
+            "niveaux_anglais_count": len(
+                niveaux_anglais.get("levels", [])
+            ),
         }
 
         logger.info(
-            "Pipeline business terminé : %s tarifs, %s mappings niveaux, %s cycles",
+            (
+                "Pipeline business terminé : "
+                "%s tarifs, %s mappings niveaux, %s cycles, "
+                "%s niveaux anglais"
+            ),
             stats["formules_tarifs_count"],
             stats["niveaux_mapping_count"],
             stats["cycles_count"],
+            stats["niveaux_anglais_count"],
         )
 
         return {
             "formules_tarifs": formules_tarifs,
             "cycles_niveaux": cycles_niveaux,
+            "niveaux_anglais": niveaux_anglais,
             "stats": stats,
         }
-
     def build_formules_tarifs(self) -> list[dict[str, str]]:
         """
         Génère formules_tarifs.json à partir de formules_tarifs.xlsx
@@ -134,6 +149,38 @@ class BusinessBatchRunner:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
         logger.info("Fichier JSON sauvegardé : %s", output_path)
+
+    def build_niveaux_anglais(self) -> dict[str, Any]:
+        """
+        Génère niveaux_anglais.json à partir de
+        niveau_programme_anglais.docx.
+        """
+
+        input_path = (
+            self.raw_docs_dir
+            / "niveau_programme_anglais.docx"
+        )
+
+        output_path = (
+            self.business_dir
+            / "niveaux_anglais.json"
+        )
+
+        payload = EnglishLevelParser.parse_levels(
+            input_path
+        )
+
+        self._save_json(
+            payload,
+            output_path,
+        )
+
+        logger.info(
+            "Fichier niveaux_anglais généré : %s niveaux",
+            len(payload.get("levels", [])),
+        )
+
+        return payload
 
 
 def main() -> dict[str, Any]:

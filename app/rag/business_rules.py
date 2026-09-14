@@ -982,95 +982,115 @@ class BusinessRulesEngine:
 
         if not birth_year:
 
-            age = self._extract_age(
-                question
-            )
+            age = self._extract_age(question)
 
             if age is None:
                 return None
 
-            current_year = (
-                datetime.now().year
-            )
+            current_year = datetime.now().year
 
             possible_birth_years = [
-                str(
-                    current_year - age
-                ),
-                str(
-                    current_year - age - 1
-                ),
+                str(current_year - age),
+                str(current_year - age - 1),
             ]
 
-            matches = [
-                self._find_niveau_by_birth_year(
-                    year
-                )
-                for year
-                in possible_birth_years
-            ]
+            matches = []
 
-            matches = [
-                item
-                for item
-                in matches
-                if item
-            ]
+            for year in possible_birth_years:
+                item = self._find_niveau_by_birth_year(year)
+
+                if item:
+                    matches.append(item)
 
             if not matches:
-                return None
+                return {
+                    "answer": (
+                        "Je n’ai pas trouvé de niveau correspondant "
+                        f"à **{age} ans** dans les informations disponibles."
+                    ),
+                    "selected_cycles": [],
+                }
 
-            cycles = {
-                self._clean_text(
-                    item.get(
-                        "cycle_name",
-                        "",
-                    )
+            # Déduplication par niveau
+            unique_matches = {}
+
+            for item in matches:
+                niveau = self._clean_text(
+                    item.get("niveau", "")
                 )
-                for item
-                in matches
-                if self._clean_text(
-                    item.get(
-                        "cycle_name",
-                        "",
-                    )
+
+                if niveau:
+                    unique_matches[niveau] = item
+
+            matches = list(unique_matches.values())
+
+            # -----------------------------------------------------
+            # Un seul niveau possible
+            # -----------------------------------------------------
+
+            if len(matches) == 1:
+
+                item = matches[0]
+
+                niveau = self._clean_text(
+                    item.get("niveau", "")
                 )
-            }
 
-            # -------------------------------------------------
-            # Les deux années possibles donnent le même cycle
-            # -------------------------------------------------
-
-            if len(cycles) == 1:
-
-                cycle_name = next(
-                    iter(cycles)
+                cycle_name = self._clean_text(
+                    item.get("cycle_name", "")
                 )
 
                 return {
                     "answer": (
                         f"D’après l’âge indiqué (**{age} ans**), "
-                        f"votre enfant correspond au **{cycle_name}**. "
-                        "Le niveau précis dépend de son année de naissance."
+                        f"votre enfant correspond au **niveau {niveau}**"
+                        + (
+                            f", rattaché au **{cycle_name}**."
+                            if cycle_name
+                            else "."
+                        )
                     ),
-                    "selected_cycles": [
-                        cycle_name
-                    ],
+                    "selected_cycles": (
+                        [cycle_name]
+                        if cycle_name
+                        else []
+                    ),
                 }
 
-            # -------------------------------------------------
-            # Plusieurs cycles possibles
-            # -------------------------------------------------
+            # -----------------------------------------------------
+            # Plusieurs niveaux possibles
+            # -----------------------------------------------------
+
+            niveaux_text = " ou ".join(
+                f"**{self._clean_text(item.get('niveau', ''))}**"
+                for item in matches
+            )
+
+            selected_cycles = []
+
+            for item in matches:
+
+                cycle_name = self._clean_text(
+                    item.get("cycle_name", "")
+                )
+
+                if (
+                    cycle_name
+                    and cycle_name not in selected_cycles
+                ):
+                    selected_cycles.append(
+                        cycle_name
+                    )
 
             return {
                 "answer": (
-                    f"À **{age} ans**, le niveau dépend de l’année "
-                    "de naissance de votre enfant. "
-                    "Pouvez-vous m’indiquer son année de naissance ?"
+                    f"D’après l’âge indiqué (**{age} ans**), "
+                    f"votre enfant peut correspondre au niveau "
+                    f"{niveaux_text}. "
+                    "L’année de naissance permet de préciser le niveau exact."
                 ),
-                "selected_cycles": [],
+                "selected_cycles": selected_cycles,
             }
-
         # -----------------------------------------------------
         # Année de naissance fournie
         # -----------------------------------------------------
